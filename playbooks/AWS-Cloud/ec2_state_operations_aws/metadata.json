@@ -1,0 +1,10 @@
+[
+    {
+        "id": "pb_aws_ec2_state_operations_on_off_restart",
+        "version": "1.0.0",
+        "name": "on_off_restart.yml",
+        "type": "playbook",
+        "start": true,
+        "requires": []
+    }
+]

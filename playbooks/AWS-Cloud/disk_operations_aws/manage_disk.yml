@@ -1,0 +1,197 @@
+---
+- name: use manage disk role playbook
+  hosts: localhost
+  connection: local
+  # checking environment variable for proxy
+  vars:
+    env: "aws"
+    proxy_env:
+      http_proxy: "{{ lookup('env', 'HTTP_PROXY') | default('', True) }}"
+      https_proxy: "{{ lookup('env', 'HTTPS_PROXY') | default('', True) }}"
+  gather_facts: no
+  tasks:
+    - block:
+      - set_fact:
+          delete_on_termination: "no"
+        when: delete_on_termination is not defined
+
+      - name: Add disk to vm
+        amazon.aws.ec2_vol:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          instance: "{{ instance_id }}"
+          region: "{{ region }}"
+          device_name: "{{ device_name }}"
+          volume_size: "{{ volume_size }}"
+          delete_on_termination: "{{ delete_on_termination }}"
+        environment: "{{ proxy_env }}"
+        ignore_errors: true
+        register: response
+
+      - name: check if there is failure
+        fail: msg="Error found in command execution"
+        when: "'exception' in response or response.failed | default(false)"
+
+      - set_fact:
+          status: "Server {{ instance_id }} disk added: {{ device_name }}"
+        when: response.changed == true
+        ignore_errors: true
+      - set_fact:
+          status: "server {{ instance_id }}, disk already added: {{ device_name }}"
+        when: response.changed == false
+        ignore_errors: true
+      when: env == "aws" and req_action == 'add' and (device_id | default('', true) | trim == '') and (snapshot | default('', true) | trim == '')
+
+      rescue:
+          - set_fact:
+              status: "Failed to perform add new disk action on instance {{ instance_id }}"
+
+  ## Block for adding existing disk to vm
+    - block:
+      - set_fact:
+          delete_on_termination: "no"
+        when: delete_on_termination is not defined
+
+      - name: Add existing disk to vm
+        amazon.aws.ec2_vol:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          instance: "{{ instance_id }}"
+          region: "{{ region }}"
+          id: "{{ device_id }}"
+          device_name: "{{ device_name }}"
+          delete_on_termination: "{{ delete_on_termination }}"
+        environment: "{{ proxy_env }}"
+        ignore_errors: true
+        register: response
+
+      - name: check if there is failure
+        fail: msg="Error found in command execution"
+        when: "'exception' in response or response.failed | default(false)"
+
+      - name: check if there is failure
+        fail: msg="Volume {{device_id}} does not exist"
+        when: response.changed == false and response.msg is defined and response.msg == "Volume {{device_id}} does not exist"
+
+      - set_fact:
+          status: "Server {{ instance_id }} disk added: {{ device_id }}"
+        when: response.changed == true
+        ignore_errors: true
+      - set_fact:
+          status: "server {{ instance_id }}, disk already added: {{ device_id }}"
+        when: response.changed == false
+        ignore_errors: true
+      when: env == "aws" and req_action == 'add' and (device_id | default('', true) | trim != '')
+
+      rescue:
+          - set_fact:
+              status: "Failed to perform add existing disk action on instance {{ instance_id }}"
+
+  ## Block for adding disk to vm using snapshot
+    - block:
+      - set_fact:
+          delete_on_termination: "no"
+        when: delete_on_termination is not defined
+
+      - name: Add disk using snapshot
+        amazon.aws.ec2_vol:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          region: "{{ region }}"
+          instance: "{{ instance_id }}"
+          snapshot: "{{ snapshot }}"
+          device_name: "{{ device_name }}"
+          delete_on_termination: "{{ delete_on_termination }}"
+        environment: "{{ proxy_env }}"
+        ignore_errors: true
+        register: response
+
+      - name: check if there is failure
+        fail: msg="Error found in command execution"
+        when: "'exception' in response or response.failed | default(false)"
+
+      - set_fact:
+          status: "Server {{ instance_id }} disk added: {{ snapshot }}"
+        when: response.changed == true
+        ignore_errors: true
+      - set_fact:
+          status: "server {{ instance_id }}, disk already added: {{ snapshot }}"
+        when: response.changed == false
+        ignore_errors: true
+      when: env == "aws" and req_action == 'add' and (snapshot | default('', true) | trim != '')
+
+      rescue:
+          - set_fact:
+              status: "Failed to perform add disk using snapshot action on instance {{ instance_id }}"
+
+  ## Block for detach the disk
+    - block:
+      - name: Detach disk
+        amazon.aws.ec2_vol:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          id: "{{ device_id }}"
+          region: "{{ region }}"
+          instance: None
+        environment: "{{ proxy_env }}"
+        ignore_errors: true
+        register: response
+        
+      - name: check if there is failure
+        fail: msg="Error found in command execution"
+        when: "'exception' in response or response.failed | default(false)"
+
+      - name: check if there is failure
+        fail: msg="Volume {{device_id}} does not exist"
+        when: response.changed == false and response.msg is defined and response.msg == "Volume {{device_id}} does not exist"
+
+      - set_fact:
+          status: "Instance detached with disk : {{ device_id }}"
+        when: response.changed == true
+        ignore_errors: true
+      - set_fact:
+          status: "No instance attached with disk:  {{ device_id }}"
+        when: response.changed == false
+        ignore_errors: true
+      when: env == "aws"  and req_action == 'detach'
+
+      rescue:
+          - set_fact:
+              status: "Failed to perform detach disk action on disk {{ device_id }}"
+
+  ### Block for removing the disk
+    - block:
+      - name: Remove disk
+        amazon.aws.ec2_vol:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          id: "{{ device_id }}"
+          region: "{{ region }}"
+          state: absent
+        environment: "{{ proxy_env }}"
+        ignore_errors: true
+        register: response
+
+      - name: check if there is failure
+        fail: msg="Error found in command execution"
+        when: "'exception' in response or response.failed | default(false)"
+
+      - name: check if there is failure
+        fail: msg="Volume {{device_id}} does not exist"
+        when: response.changed == false and response.msg is defined and response.msg == "Volume {{device_id}} does not exist"
+
+      - set_fact:
+          status: "disk removed: {{ device_id }}"
+        when: response.changed == true
+        ignore_errors: true
+      - set_fact:
+          status: "No disk removed: {{ device_id }}"
+        when: response.changed == false
+        ignore_errors: true
+      when: env == "aws" and (req_action == 'remove' or req_action == 'delete')
+
+      rescue:
+          - set_fact:
+              status: "Failed to perform remove disk action on disk {{ device_id }}"        
+
+  

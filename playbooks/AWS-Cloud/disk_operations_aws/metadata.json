@@ -1,0 +1,10 @@
+[
+    {
+        "id": "pb_aws_disk_operations_manage_disk",
+        "version": "1.0.0",
+        "name": "manage_disk.yml",
+        "type": "playbook",
+        "start": true,
+        "requires": []
+    }
+]

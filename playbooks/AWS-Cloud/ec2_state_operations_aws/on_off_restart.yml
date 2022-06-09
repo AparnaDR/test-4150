@@ -1,0 +1,65 @@
+---
+- name: use on_off_restart role playbook
+  hosts: localhost
+  connection: local
+  # checking environment variable for proxy
+  vars:
+    env: "aws"
+    proxy_env:
+      http_proxy: "{{ lookup('env', 'HTTP_PROXY') | default('', True) }}"
+      https_proxy: "{{ lookup('env', 'HTTPS_PROXY') | default('', True) }}"
+  gather_facts: no
+  tasks:
+    - set_fact:
+        new_action: "{{ req_action|lower }}"
+    - set_fact:
+        state: stopped
+      when: new_action == "powerOff" or new_action == "stop"
+
+    - set_fact:
+        state: running
+      when: new_action == "powerOn" or new_action == "start"
+
+    - set_fact:
+        state: restarted
+      when: new_action == "restart" or new_action == "reboot"
+    
+    - set_fact:
+        state: absent
+      when: new_action == "delete" or new_action == "remove"
+
+    # - debug:
+    #     msg: "request for new state: {{ state }} action: {{ new_action }}"
+
+    - block:
+      - name: Modify EC2 running state
+        community.aws.ec2_instance:
+          aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+          aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+          instance_ids: "{{ ITDSYSIDSI }}"
+          region: "{{ region }}"
+          state: "{{ state }}"
+          wait: true
+        environment: "{{ proxy_env }}"
+        ignore_errors: true
+        register: response
+
+      - name: check if there is failure
+        fail: msg="Error found in command execution"
+        when: "'exception' in response or response.failed | default(false)"
+
+      - set_fact:
+          status: "Server {{ ITDSYSIDSI }} is set to new state: {{ state }}"
+        when: response.changed == true
+        ignore_errors: true
+      - set_fact:
+          status: "server {{ ITDSYSIDSI }}, already in the {{ state }} state"
+        when: response.changed == false
+        ignore_errors: true
+      when: env == "aws" and state != "" and ITDSYSIDSI is defined
+      rescue:
+          - set_fact:
+              status: "Failed to perform new_action {{ new_action }} on server {{ ITDSYSIDSI }}"
+          
+
+
